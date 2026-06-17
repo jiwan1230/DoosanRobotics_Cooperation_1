@@ -1,0 +1,77 @@
+import copy
+
+def gripper_init():
+    start_pose_up = posx(574.07, 149.69, 340.0, 0.0,-180.0, 0.0)
+    target_pos_up = posx(276.04, 147.85, 340.75, 0, -180, 0)
+
+    # 초기 위치로 이동 및 gripper 설정
+    movel(start_pose_up, 50, 50)
+    set_digital_output(2,ON)
+    set_digital_output(1,OFF)
+    mwait(1)
+    return
+
+def down_and_grip():
+    while 1:
+    # 반복문을 통한 외력 센싱
+        force_ext = get_tool_force(DR_BASE)
+
+        # 그리퍼 값이 5를 넘어가면 stop문 실행
+        if force_ext[2] > 5 :
+            # 로봇팔 이동 정지
+            stop(DR_SSTOP) 
+            # 바닥에 닿았을 때의 위치를 저장
+            bottom_xyz = get_current_posx()[0]
+            # 그리퍼가 잡을 수 있는 공간 만들기 Z +
+            bottom_xyz[2] += 45
+            movel(bottom_xyz, 50, 50)
+
+            # 그리퍼 닫기
+            set_digital_output(2,OFF)
+            set_digital_output(1,ON)
+            mwait(1)
+            break
+    return
+
+mode = 0
+
+while 1:
+
+    if mode%2 == 0:
+        up_pose = copy.deepcopy(start_pose_up)
+    else:
+        up_pose = copy.deepcopy(target_pos_up)
+    mode += 1
+
+    temp_pos = copy.deepcopy(up_pose)
+    movel(temp_pos, 50, 50)
+
+    temp_pos[2] = -100
+    amovel(temp_pos, 15, 15)
+
+    while 1:
+        # 반복문을 통한 외력 센싱
+        force_ext = get_tool_force(DR_BASE)
+
+        # 그리퍼 값이 5를 넘어가면 stop문 실행
+        if force_ext[2] > 5 :
+            # 로봇팔 이동 정지
+            stop(DR_SSTOP) 
+            # 바닥에 닿았을 때의 위치를 저장
+            bottom_xyz = get_current_posx()[0]
+            # 그리퍼가 잡을 수 있는 공간 만들기 Z +
+            bottom_xyz[2] += 45
+            movel(bottom_xyz, 50, 50)
+
+            # 그리퍼 닫기
+            set_digital_output(2,OFF)
+            set_digital_output(1,ON)
+            mwait(1)
+            break
+
+    # 잡은 상태로 위로 올라오기
+    movel(up_pose, 50, 50)
+
+
+# s2 위치로 이동
+movel(target_pos_up, 50, 50)
