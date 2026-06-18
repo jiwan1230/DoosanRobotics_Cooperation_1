@@ -1,0 +1,209 @@
+import copy
+
+# ===============================
+# 전역 변수 및 기본 설정
+# ===============================
+
+# 1번 위치 위쪽 좌표
+pos1_pose_up = posx(574.07, 149.69, 340.0, 0.0, -180.0, 0.0)
+
+# 2번 위치 위쪽 좌표
+pos2_pose_up = posx(276.04, 147.85, 340.75, 0.0, -180.0, 0.0)
+
+# 외력 감지 기준값
+FORCE_THRESHOLD = 5.0
+
+# 물체를 잡기 위해 접촉 위치에서 위로 올릴 높이
+GRIPPER_Z_OFFSET = 45.0
+
+# 아래로 내려갈 거리
+DOWN_DISTANCE = 500.0
+
+# 그리퍼 상태
+# 0 : 물체를 잡고 있지 않은 상태
+# 1 : 물체를 잡고 있는 상태
+gripper_status = 0
+
+
+# ===============================
+# 그리퍼 초기화 함수
+# ===============================
+
+def gripper_init():
+    # global gripper_status
+
+    # 1번 위치 위쪽으로 이동
+    movel(pos1_pose_up, 50, 50)
+
+    # 그리퍼 열기
+    open_gripper()
+
+    # 그리퍼 상태 초기화
+    # gripper_status = 0
+
+    return
+
+
+# ===============================
+# 그리퍼 열기 함수
+# ===============================
+
+def open_gripper():
+    global gripper_status
+
+    # 그리퍼 열기
+    set_digital_output(1, OFF)
+    set_digital_output(2, ON)
+    mwait(1.5)
+
+    # 그리퍼 상태 변경
+    gripper_status = 0
+
+    return
+
+
+# ===============================
+# 그리퍼 닫기 함수
+# ===============================
+
+def close_gripper(contact_pos):
+    global gripper_status
+
+    # 접촉 위치를 복사해서 사용
+    grip_pos = copy.deepcopy(contact_pos)
+
+    # 그리퍼가 물체를 잡을 수 있도록 Z축 방향으로 위로 이동
+    grip_pos[2] += GRIPPER_Z_OFFSET
+
+    # 보정 위치로 이동
+    movel(grip_pos, 50, 50)
+
+    # 그리퍼 닫기
+    set_digital_output(2, OFF)
+    set_digital_output(1, ON)
+    mwait(1.5)
+
+    # 그리퍼 상태 변경
+    gripper_status = 1
+
+    return
+
+
+# ===============================
+# 아래로 내려가다가 외력이 감지되면 멈추는 함수
+# ===============================
+
+def move_down_until_contact(up_pose):
+    # 현재 상단 위치를 복사
+    down_pose = copy.deepcopy(up_pose)
+
+    # 아래 방향으로 충분히 내려갈 목표 위치 설정
+    down_pose[2] -= DOWN_DISTANCE
+
+    # 아래 방향으로 비동기 이동 시작
+    amovel(down_pose, 15, 15)
+
+    while True:
+        # 반복문을 통한 외력 센싱
+        force_ext = get_tool_force(DR_BASE)
+
+        # Z축 방향 외력 확인
+        force_z = force_ext[2]
+
+        # 외력이 기준값을 넘어가면 stop문 실행
+        if force_z > FORCE_THRESHOLD:
+            # 로봇팔 이동 정지
+            stop(DR_SSTOP)
+
+            # 바닥 또는 물체에 닿았을 때의 현재 위치 저장
+            contact_pos = get_current_posx()[0]
+
+            break
+
+    # 접촉 위치 반환
+    return contact_pos
+
+
+# ===============================
+# 특정 위치에서 물체를 잡는 함수
+# ===============================
+
+def pick_at(up_pose):
+    global gripper_status
+
+    # 해당 위치 위쪽으로 이동
+    movel(up_pose, 50, 50)
+
+    # 아래로 내려가다가 외력이 감지되면 정지하고 접촉 위치 반환
+    contact_pos = move_down_until_contact(up_pose)
+
+    # 현재 물체를 잡고 있지 않은 상태라면 물체 잡기
+    if gripper_status == 0:
+        close_gripper(contact_pos)
+
+    # 이미 물체를 잡고 있는 상태라면 추가 동작 없이 유지
+    else:
+        pass
+
+    # 잡은 상태로 다시 위쪽 위치로 이동
+    movel(up_pose, 50, 50)
+
+    return
+
+
+# ===============================
+# 특정 위치에서 물체를 내려놓는 함수
+# ===============================
+
+def place_at(up_pose):
+    global gripper_status
+
+    # 해당 위치 위쪽으로 이동
+    movel(up_pose, 50, 50)
+
+    # 아래로 내려가다가 외력이 감지되면 정지하고 접촉 위치 반환
+    contact_pos = move_down_until_contact(up_pose)
+
+    # 현재 물체를 잡고 있는 상태라면 물체 내려놓기
+    if gripper_status == 1:
+        open_gripper()
+
+    # 현재 물체를 잡고 있지 않은 상태라면 추가 동작 없이 유지
+    else:
+        pass
+
+    # 내려놓은 후 다시 위쪽 위치로 이동
+    movel(up_pose, 50, 50)
+
+    return
+
+
+# ===============================
+# 메인 반복 동작
+# ===============================
+
+def main():
+
+    # 초기 위치 이동 및 그리퍼 초기화
+    gripper_init()
+
+    while True:
+
+        # 1번 위치에서 내려가서 물체 잡기
+        pick_at(pos1_pose_up)
+
+        # 2번 위치로 이동 후 내려가서 물체 내려놓기
+        place_at(pos2_pose_up)
+
+        # 2번 위치에서 다시 내려가서 물체 잡기
+        pick_at(pos2_pose_up)
+
+        # 1번 위치로 이동 후 내려가서 물체 내려놓기
+        place_at(pos1_pose_up)
+
+
+# ===============================
+# 프로그램 실행
+# ===============================
+
+main()
