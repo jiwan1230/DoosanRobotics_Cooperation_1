@@ -17,7 +17,7 @@ pos2_pose_up = posx(274.45, -151.64, 340.75, 0.0, -180.0, 0.0)
 FORCE_THRESHOLD = - 5.0
 
 # 물체를 잡기 위해 접촉 위치에서 위로 올릴 높이
-GRIPPER_Z_OFFSET = 45.0
+GRIPPER_Z_OFFSET = 40.0
 
 # 아래로 내려갈 거리
 DOWN_DISTANCE = 500.0
@@ -247,7 +247,7 @@ def move_down_rotate(up_pose):
     )
     while fail_count <= 5:
         success = False
-        amove_periodic(amp = [0, 0, 0, 0, 0, 2], period = 0.5, atime = 0.1, repeat = 10, ref = DR_TOOL)
+        amove_periodic(amp = [0, 0, 0, 0, 0, 4], period = 0.5, atime = 0.1, repeat = 10, ref = DR_TOOL)
         mwait(0)
         current_pos = get_current_posx()[0]
         current_z = current_pos[2]
