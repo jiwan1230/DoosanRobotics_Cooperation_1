@@ -1,0 +1,99 @@
+import copy
+
+POSE_ORIGIN = [547.0, 194.0, 500.0, 0, -180, 0]
+POSE_GAP = 53
+
+STX = [3000, 3000, 300, 400, 400, 400] # 변환 강성 값
+
+#하강 조건
+DOWN_LENGTH = 500
+DOWN_SPEED = 20
+DOWN_ACC = 20
+
+FORCE_THRESHOLD = -5 #tool에 가해지는 힘 한계
+
+FORCE_DESIRED = 20
+FORCE_DIRECTION = [0, 0, -1, 0, 0, 0]
+
+def collision_check(pose_origin, length = DOWN_LENGTH, speed = DOWN_SPEED, acc = DOWN_ACC):
+    task_compliance_ctrl(STX)
+    pose_up = copy.deepcopy(pose_origin)
+    pose_down = copy.deepcopy(pose_origin)
+    pose_dowm[2] -= length
+    
+    movel(pose_up, speed, acc)
+
+    amovel(pose_down, speed, acc)
+
+    while True:
+        force_z = get_tool_force(DR_BASE)[2]
+        if force_z > FORCE_THRESHOLD:
+            stop(DR_SSTOP)
+            break
+
+    pose_current = get_current_posx(DR_BASE)[0]
+    
+    pose_current[2] += 5
+    movel(pose_current, speed, acc)
+    
+    open_gripper()
+
+    pose_current[2] -= 15
+    movel(pose_current, speed, acc)
+
+    close_gripper()
+
+    movel(pose_up, speed, acc)
+
+    release_compliance_ctrl()
+
+    return
+
+def move_to_target_pose(pose_origin, force_desired = FORCE_DESIRED, force_direction = FORCE_DIRECTION):
+    movel(pose_origin)
+
+    task_compliance_ctrl(STX)
+
+    force_mat = [0, 0, force_desired, 0, 0, 0]
+    set_desired_force(force_mat, force_direction)
+
+    while True:
+        force_z = get_tool_force(DR_BASE)[2]
+        if force_z > FORCE_THRESHOLD:
+            release_force(0.5)
+            break
+
+    open_gripper()
+
+    amovel(pose_origin)
+    return
+
+def open_gripper():     #그리퍼 열기
+    set_digital_output(1, OFF)
+    set_digital_output(2, ON)
+    wait_digital_input(2, 1)
+    return
+
+def close_gripper():    #그리퍼 닫기
+    set_digital_output(1, ON)
+    set_digital_output(2, OFF)
+    wait_digital_input(1, 1)
+    return
+
+def main():
+    close_gripper():
+    num_mat = [1, 0, -1]
+    for i in num_mat:
+        for j in num_mat:
+            pose_start = POSE_ORIGIN
+            pose_start[0] += i * POSE_GAP
+            pose_start[1] += j * POSE_GAP
+            pose_target = copy.deepcopy(pose_start)
+            pose_target[1] -= 297
+
+            collision_check(pose_start)
+
+            move_to_target_pose(pose_target)
+
+if __name__ == "__main__":
+    main()
