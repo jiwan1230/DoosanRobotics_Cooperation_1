@@ -1,4 +1,5 @@
 import copy
+import math
 
 # ===============================
 # 전역 변수 및 기본 설정
@@ -7,20 +8,24 @@ import copy
 # 1번 위치 위쪽 좌표
 pos1_pose_up = posx(574.07, 149.69, 340.0, 0.0, -180.0, 0.0)
 
-# 2번 위치 위쪽 좌표
-pos3_pose_up = posx(276.04, 147.85, 340.75, 0.0, -180.0, 0.0)
-
 # 3번 위치 위쪽 좌표
+# pos3_pose_up = posx(276.04, 147.85, 340.75, 0.0, -180.0, 0.0)
+
+# 2번 위치 위쪽 좌표
 pos2_pose_up = posx(274.45, -151.64, 340.75, 0.0, -180.0, 0.0)
 
 # 외력 감지 기준값
 FORCE_THRESHOLD = - 5.0
 
 # 물체를 잡기 위해 접촉 위치에서 위로 올릴 높이
-GRIPPER_Z_OFFSET = 45.0
+GRIPPER_Z_OFFSET = 40.0
 
 # 아래로 내려갈 거리
 DOWN_DISTANCE = 500.0
+DOWN_SPEED = 30
+DOWN_ACC = 30
+
+CONTACT_CHECK_PERIOD = 0.02
 
 # 그리퍼 상태
 # 0 : 물체를 잡고 있지 않은 상태
@@ -29,10 +34,6 @@ gripper_status = 0
 
 # compliance 전용 stiffness
 CUSTOM_STIFFNESS = [3000, 3000, 300, 400, 400, 400]
-
-force = [0, 0, 20, 0, 0, 0]
-force_derection = [0, 0, -1, 0, 0, 0]
-
 
 # ===============================
 # 기어 삽입 관련 설정
@@ -45,33 +46,7 @@ FORCE_DIRECTION = [0, 0, 1, 0, 0, 0]
 INSERT_TARGET_Z = 270.0
 INSERT_Z_TOLERANCE = 3.0
 
-ROTATE_STEP_DEG = 3.0
-MAX_ROTATE_TRY = 30
-
-# 이 Z값보다 높은 위치에서 외력이 감지되면
-# 기어가 맞물리지 않고 위에서 막혔다고 판단
 INSERT_SUCCESS_Z_THRESHOLD = 285.0
-
-# 삽입 실패 후 살짝 들어올릴 높이
-RETRY_LIFT_Z = 8.0
-
-# 한 번 실패할 때마다 그리퍼/TCP를 회전할 각도
-ROTATE_STEP_DEG = 10.0
-
-# 최대 삽입 재시도 횟수
-MAX_INSERT_RETRY = 18
-
-# 삽입 시도 속도/가속도
-INSERT_SPEED = 10
-INSERT_ACC = 10
-
-# 일반 하강 속도/가속도
-DOWN_SPEED = 15
-DOWN_ACC = 15
-
-# 접촉 체크 주기
-CONTACT_CHECK_PERIOD = 0.02
-
 
 # ===============================
 # 그리퍼 초기화 함수
@@ -86,8 +61,6 @@ def gripper_init():
     # 그리퍼 열기
     open_gripper()
 
-    gripper_status = 0
-
     return
 
 
@@ -100,7 +73,8 @@ def open_gripper():
 
     set_digital_output(1, OFF)
     set_digital_output(2, ON)
-    mwait(1.5)
+    
+    wait_digital_input(2,1)
 
     gripper_status = 0
 
@@ -126,23 +100,12 @@ def close_gripper(contact_pos):
     # 그리퍼 닫기
     set_digital_output(2, OFF)
     set_digital_output(1, ON)
-    mwait(1.5)
+    
+    wait_digital_input(1,1)
 
     gripper_status = 1
 
     return
-
-
-# ===============================
-# Compliance 순응 제어 활성화 / 비활성화
-# ===============================
-
-def activate_compliance_ctrl():
-    task_compliance_ctrl(CUSTOM_STIFFNESS)
-
-
-def deactivate_compliance_ctrl():
-    release_compliance_ctrl()
 
 
 # ===============================
@@ -183,40 +146,6 @@ def move_down_until_contact(up_pose, speed=DOWN_SPEED, acc=DOWN_ACC):
 
 
 # ===============================
-# 현재 위치에서 살짝 들어올리는 함수
-# ===============================
-
-def lift_from_current(z_offset):
-    current_pose = get_current_posx()[0]
-    lift_pose = copy.deepcopy(current_pose)
-
-    lift_pose[2] += z_offset
-
-    movel(lift_pose, 20, 20)
-    mwait(0.2)
-
-    return lift_pose
-
-
-# ===============================
-# 현재 TCP 자세 기준으로 그리퍼 회전
-# ===============================
-
-def rotate_gripper_z(delta_deg):
-    current_pose = get_current_posx()[0]
-    rotate_pose = copy.deepcopy(current_pose)
-
-    # posx(x, y, z, rx, ry, rz)
-    # 마지막 Rz 값을 변경해서 TCP 방향 기준 회전
-    rotate_pose[5] += delta_deg
-
-    movel(rotate_pose, 10, 10)
-    mwait(0.2)
-
-    return rotate_pose
-
-
-# ===============================
 # 특정 위치에서 물체를 잡는 함수
 # ===============================
 
@@ -227,13 +156,13 @@ def pick_at(up_pose):
     movel(up_pose, 50, 50)
 
     # Pick 동작에서도 부드럽게 접촉하기 위해 compliance 활성화
-    activate_compliance_ctrl()
+    task_compliance_ctrl(CUSTOM_STIFFNESS)
 
     # 아래로 내려가다가 외력 감지
     contact_pos = move_down_until_contact(up_pose, DOWN_SPEED, DOWN_ACC)
 
     # compliance 비활성화
-    deactivate_compliance_ctrl()
+    release_compliance_ctrl()
 
     # 접촉 실패 시 복귀
     if contact_pos is None:
@@ -254,43 +183,60 @@ def move_down_rotate(up_pose):
     global force
     global force_derection
 
-    # 기어 삽입용 compliance
+    fail_count = 0
+
     task_compliance_ctrl(CUSTOM_STIFFNESS)
+
+    
+    down_pose = copy.deepcopy(up_pose)
+
+    # 아래 방향으로 충분히 내려갈 목표 위치 설정
+    down_pose[2] -= DOWN_DISTANCE
+    
+    # 아래 방향으로 비동기 이동 시작
+    amovel(down_pose, DOWN_SPEED, DOWN_ACC)
+
+    while True:
+        # 외력 센싱
+        force_ext = get_tool_force(DR_BASE)
+        force_z = force_ext[2]
+
+        if force_z > FORCE_THRESHOLD:
+            stop(DR_SSTOP)
+            break
+
+        wait(CONTACT_CHECK_PERIOD)
 
     # Z축 아래 방향으로 일정 힘을 가함
     set_desired_force(
         [0, 0, FORCE_TARGET_Z, 0, 0, 0],
         FORCE_DIRECTION
     )
-
-    success = False
-
-    for i in range(MAX_ROTATE_TRY):
-
+    
+    while fail_count <= 5:
+        success = False
+        amove_periodic(amp = [0, 0, 0, 0, 0, 4], period = 0.5, atime = 0.1, repeat = 5, ref = DR_TOOL)
+        mwait(0)
         current_pos = get_current_posx()[0]
         current_z = current_pos[2]
 
-        print("Insert try:", i + 1, "current_z:", current_z)
-
-        # Z값이 270 근처까지 내려가면 성공
-        if current_z <= INSERT_TARGET_Z + INSERT_Z_TOLERANCE:
+        if current_z <= (INSERT_TARGET_Z + INSERT_Z_TOLERANCE):
             success = True
-            break
+        else:
+            print("Gear insertion failed.")
+            stop(DR_SSTOP)
 
-        # 아직 목표 Z까지 못 내려갔다면 살짝 회전
-        amove_periodic(amp = [0, 0, 0, 0, 0, 2], period = 0.5, atime = 0.1, repeat = 10, ref = DR_TOOL)
-        
+        if success:
+            release_force(0.5)
+            release_compliance_ctrl()
+            open_gripper()
+            return True
 
-    # force / compliance 해제
-    release_force(0.5)
-    release_compliance_ctrl()
+        else:
+            fail_count += 1
 
-    if success:
-        open_gripper()
-        return True
-    else:
-        print("Gear insertion failed.")
-        return False
+    tp_popup("이물질 제거해줘", pm_type=DR_PM_WARNING, button_type=0)
+    return False
 
 # ===============================
 # 기어 삽입용 Place 함수
@@ -304,81 +250,43 @@ def place_at(up_pose):
     # 아래로 내려가다가 외력이 감지되면 정지하고 접촉 위치 반환
     move_down_rotate(up_pose)
 
+
     movel(up_pose, 50, 50)
 
     return
 
 
 # ===============================
-# 단순 Place 함수
-# 필요하면 복귀 위치에 사용할 수 있음
-# ===============================
-
-def place_simple_at(up_pose):
-    global gripper_status
-
-    if gripper_status == 0:
-        print("No object in gripper. Skip simple place.")
-        return False
-
-    movel(up_pose, 50, 50)
-
-    activate_compliance_ctrl()
-
-    contact_pos = move_down_until_contact(up_pose, DOWN_SPEED, DOWN_ACC)
-
-    deactivate_compliance_ctrl()
-
-    if contact_pos is None:
-        movel(up_pose, 50, 50)
-        return False
-
-    open_gripper()
-
-    movel(up_pose, 50, 50)
-
-    return True
-
-
-# ===============================
 # 메인 반복 동작
 # ===============================
-
-def main():
-
+def start():
     # 초기 위치 이동 및 그리퍼 초기화
     gripper_init()
 
-    while True:
+    # 1번 위치에서 물체 잡기
+    pick_success = pick_at(pos1_pose_up)
 
-        # 1번 위치에서 물체 잡기
-        pick_success = pick_at(pos1_pose_up)
+    if pick_success == False:
+        print("Pick at position 1 failed.")
+        break
 
-        if pick_success == False:
-            print("Pick at position 1 failed.")
-            break
+    # 2번 위치에 기어 삽입
+    place_success = place_at(pos2_pose_up)
 
-        # 2번 위치에 기어 삽입
-        place_success = place_at(pos2_pose_up)
+    if place_success == False:
+        print("Gear place at position 2 failed.")
+        break
 
-        if place_success == False:
-            print("Gear place at position 2 failed.")
-            break
+def main():
 
-        # 2번 위치에서 다시 물체 잡기
-        pick_success = pick_at(pos2_pose_up)
+    while 1:
+        x, y, z, _, _, _= get_tool_force(DR_BASE)
+        z += 10
 
-        if pick_success == False:
-            print("Pick at position 2 failed.")
-            break
+        impact_force = math.sqrt(x**2 + y**2 + z**2)
 
-        # 1번 위치로 되돌려 놓기
-        # 1번 위치도 기어 삽입 판정이 필요하면 place_at 사용
-        # 단순히 내려놓는 목적이면 place_simple_at 사용
-        place_success = place_simple_at(pos1_pose_up)
-
-        if place_success == False:
-            print("Simple place at position 1 failed.")
+        if impact_force >= 20:
+            start()
             break
 
 
