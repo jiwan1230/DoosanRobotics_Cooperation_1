@@ -12,7 +12,7 @@ pos1_pose_up = posx(574.07, 149.69, 340.0, 0.0, -180.0, 0.0)
 pos3_pose_up = posx(276.04, 147.85, 340.75, 0.0, -180.0, 0.0)
 
 # 2번 위치 위쪽 좌표
-pos2_pose_up = posx(274.45, -151.64, 340.75, 0.0, -180.0, 0.0)
+# pos2_pose_up = posx(274.45, -151.64, 340.75, 0.0, -180.0, 0.0)
 
 # 외력 감지 기준값
 FORCE_THRESHOLD = - 5.0
@@ -61,8 +61,6 @@ def gripper_init():
     # 그리퍼 열기
     open_gripper()
 
-    gripper_status = 0
-
     return
 
 
@@ -75,7 +73,8 @@ def open_gripper():
 
     set_digital_output(1, OFF)
     set_digital_output(2, ON)
-    mwait(1.5)
+    
+    wait_digital_input(2,1)
 
     gripper_status = 0
 
@@ -101,7 +100,8 @@ def close_gripper(contact_pos):
     # 그리퍼 닫기
     set_digital_output(2, OFF)
     set_digital_output(1, ON)
-    mwait(1.5)
+    
+    wait_digital_input(1,1)
 
     gripper_status = 1
 
@@ -143,40 +143,6 @@ def move_down_until_contact(up_pose, speed=DOWN_SPEED, acc=DOWN_ACC):
             return None
 
         wait(CONTACT_CHECK_PERIOD)
-
-
-# ===============================
-# 현재 위치에서 살짝 들어올리는 함수
-# ===============================
-
-def lift_from_current(z_offset):
-    current_pose = get_current_posx()[0]
-    lift_pose = copy.deepcopy(current_pose)
-
-    lift_pose[2] += z_offset
-
-    movel(lift_pose, 20, 20)
-    mwait(0.2)
-
-    return lift_pose
-
-
-# ===============================
-# 현재 TCP 자세 기준으로 그리퍼 회전
-# ===============================
-
-def rotate_gripper_z(delta_deg):
-    current_pose = get_current_posx()[0]
-    rotate_pose = copy.deepcopy(current_pose)
-
-    # posx(x, y, z, rx, ry, rz)
-    # 마지막 Rz 값을 변경해서 TCP 방향 기준 회전
-    rotate_pose[5] += delta_deg
-
-    movel(rotate_pose, 10, 10)
-    mwait(0.2)
-
-    return rotate_pose
 
 
 # ===============================
@@ -246,6 +212,7 @@ def move_down_rotate(up_pose):
         [0, 0, FORCE_TARGET_Z, 0, 0, 0],
         FORCE_DIRECTION
     )
+    
     while fail_count <= 5:
         success = False
         amove_periodic(amp = [0, 0, 0, 0, 0, 4], period = 0.5, atime = 0.1, repeat = 10, ref = DR_TOOL)
@@ -258,7 +225,6 @@ def move_down_rotate(up_pose):
         else:
             print("Gear insertion failed.")
             stop(DR_SSTOP)
-            # 아직 목표 Z까지 못 내려갔다면 살짝 회전
 
         if success:
             release_force(0.5)
@@ -268,10 +234,8 @@ def move_down_rotate(up_pose):
 
         else:
             fail_count += 1
-            # current_pos[2] += 20
-            # movel(current_pos, 30, 30)
 
-    tp_popup("이물질 제거해줘어엉", pm_type=DR_PM_WARNING, button_type=0)
+    tp_popup("이물질 제거해줘", pm_type=DR_PM_WARNING, button_type=0)
     return False
 
 # ===============================
@@ -293,68 +257,35 @@ def place_at(up_pose):
 
 
 # ===============================
-# 단순 Place 함수
-# 필요하면 복귀 위치에 사용할 수 있음
-# ===============================
-
-def place_simple_at(up_pose):
-    global gripper_status
-
-    if gripper_status == 0:
-        print("No object in gripper. Skip simple place.")
-        return False
-
-    movel(up_pose, 50, 50)
-
-    task_compliance_ctrl(CUSTOM_STIFFNESS)
-
-    contact_pos = move_down_until_contact(up_pose, DOWN_SPEED, DOWN_ACC)
-
-    release_compliance_ctrl()
-
-    if contact_pos is None:
-        movel(up_pose, 50, 50)
-        return False
-
-    open_gripper()
-
-    movel(up_pose, 50, 50)
-
-    return True
-
-
-# ===============================
 # 메인 반복 동작
 # ===============================
 def start():
     # 초기 위치 이동 및 그리퍼 초기화
     gripper_init()
 
-    while True:
+    # 1번 위치에서 물체 잡기
+    pick_success = pick_at(pos1_pose_up)
 
-        # 1번 위치에서 물체 잡기
-        pick_success = pick_at(pos1_pose_up)
+    if pick_success == False:
+        print("Pick at position 1 failed.")
+        break
 
-        if pick_success == False:
-            print("Pick at position 1 failed.")
-            break
+    # 2번 위치에 기어 삽입
+    place_success = place_at(pos2_pose_up)
 
-        # 2번 위치에 기어 삽입
-        place_success = place_at(pos2_pose_up)
-
-        if place_success == False:
-            print("Gear place at position 2 failed.")
-            break
+    if place_success == False:
+        print("Gear place at position 2 failed.")
+        break
 
 def main():
-    task_compliance_ctrl([300, 300, 300, 200, 200, 200])
 
     while 1:
-        x, y, z, = get_tool_force(DR_BASE)
-        impact_force = math.sqrt(x^2 + y^2 + z^2)
+        x, y, z, _, _, _= get_tool_force(DR_BASE, 0)
+        z += 10
+        
+        impact_force = math.sqrt(x**2 + y**2 + z**2)
 
         if impact_force >= 20:
-            release_compliance_ctrl()
             start()
             break
 
