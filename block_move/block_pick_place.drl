@@ -1,5 +1,6 @@
 import copy
 
+
 POSE_ORIGIN = [549.77, 198.01, 350.0, 0, -180, 0]
 POSE_GAP = 49.03
 
