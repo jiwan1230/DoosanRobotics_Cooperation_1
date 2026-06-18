@@ -1,7 +1,7 @@
 import copy
 
-POSE_ORIGIN = [547.0, 194.0, 500.0, 0, -180, 0]
-POSE_GAP = 53
+POSE_ORIGIN = [549.77, 198.01, 350.0, 0, -180, 0]
+POSE_GAP = 49.03
 
 STX = [3000, 3000, 300, 400, 400, 400] # 변환 강성 값
 
@@ -10,47 +10,51 @@ DOWN_LENGTH = 500
 DOWN_SPEED = 20
 DOWN_ACC = 20
 
+MOVE_SPEED = 50
+MOVE_ACC = 50
+
 FORCE_THRESHOLD = -5 #tool에 가해지는 힘 한계
 
-FORCE_DESIRED = 20
-FORCE_DIRECTION = [0, 0, -1, 0, 0, 0]
+FORCE_DESIRED = -20
+FORCE_DIRECTION = [0, 0, 1, 0, 0, 0]
 
-def collision_check(pose_origin, length = DOWN_LENGTH, speed = DOWN_SPEED, acc = DOWN_ACC):
+def collision_check(pose_origin, length = DOWN_LENGTH, d_speed = DOWN_SPEED, d_acc = DOWN_ACC, m_speed = MOVE_SPEED, m_acc = MOVE_ACC):
     task_compliance_ctrl(STX)
     pose_up = copy.deepcopy(pose_origin)
     pose_down = copy.deepcopy(pose_origin)
-    pose_dowm[2] -= length
+    pose_down[2] -= length
     
-    movel(pose_up, speed, acc)
+    movel(pose_up, m_speed, m_acc)
 
-    amovel(pose_down, speed, acc)
+    amovel(pose_down, d_speed, d_acc)
 
     while True:
         force_z = get_tool_force(DR_BASE)[2]
         if force_z > FORCE_THRESHOLD:
-            stop(DR_SSTOP)
+            stop(DR_QSTOP)
             break
+        wait(0.02)
 
-    pose_current = get_current_posx(DR_BASE)[0]
+    wait(0.5)
     
-    pose_current[2] += 5
-    movel(pose_current, speed, acc)
+    movel([0, 0, 25, 0, 0, 0], d_speed, d_acc, mod = DR_MV_MOD_REL)
     
+    release_compliance_ctrl()
+
     open_gripper()
 
-    pose_current[2] -= 15
-    movel(pose_current, speed, acc)
+    movel([0, 0, -40, 0, 0, 0], d_speed, d_acc, mod = DR_MV_MOD_REL)
 
     close_gripper()
 
-    movel(pose_up, speed, acc)
+    movel(pose_up, m_speed, m_acc)
 
-    release_compliance_ctrl()
+    
 
     return
 
-def move_to_target_pose(pose_origin, force_desired = FORCE_DESIRED, force_direction = FORCE_DIRECTION):
-    movel(pose_origin)
+def move_to_target_pose(pose_origin, force_desired = FORCE_DESIRED, force_direction = FORCE_DIRECTION, speed = MOVE_SPEED, acc = MOVE_ACC):
+    movel(pose_origin, speed, acc)
 
     task_compliance_ctrl(STX)
 
@@ -60,12 +64,16 @@ def move_to_target_pose(pose_origin, force_desired = FORCE_DESIRED, force_direct
     while True:
         force_z = get_tool_force(DR_BASE)[2]
         if force_z > FORCE_THRESHOLD:
-            release_force(0.5)
+            release_force()
             break
+        wait(0.01)
+
+    wait(0.5)
 
     open_gripper()
+    release_compliance_ctrl()
 
-    amovel(pose_origin)
+    movel(pose_origin, speed, acc)
     return
 
 def open_gripper():     #그리퍼 열기
@@ -81,11 +89,11 @@ def close_gripper():    #그리퍼 닫기
     return
 
 def main():
-    close_gripper():
+    close_gripper()
     num_mat = [1, 0, -1]
     for i in num_mat:
         for j in num_mat:
-            pose_start = POSE_ORIGIN
+            pose_start = copy.deepcopy(POSE_ORIGIN)
             pose_start[0] += i * POSE_GAP
             pose_start[1] += j * POSE_GAP
             pose_target = copy.deepcopy(pose_start)
@@ -95,5 +103,4 @@ def main():
 
             move_to_target_pose(pose_target)
 
-if __name__ == "__main__":
-    main()
+main()
