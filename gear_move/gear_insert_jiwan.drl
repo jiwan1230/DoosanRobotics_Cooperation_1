@@ -155,7 +155,7 @@ def move_down_until_contact(up_pose, speed=DOWN_SPEED, acc=DOWN_ACC):
         current_z = current_pos[2]
 
         # Z축 외력 감지
-        if abs(force_z) > FORCE_THRESHOLD:
+        if force_z > FORCE_THRESHOLD:
             stop(DR_SSTOP)
             contact_pos = get_current_posx()[0]
             return contact_pos
