@@ -1,4 +1,5 @@
 import copy
+import math
 
 # ===============================
 # 전역 변수 및 기본 설정
@@ -325,9 +326,7 @@ def place_simple_at(up_pose):
 # ===============================
 # 메인 반복 동작
 # ===============================
-
-def main():
-
+def start():
     # 초기 위치 이동 및 그리퍼 초기화
     gripper_init()
 
@@ -347,20 +346,16 @@ def main():
             print("Gear place at position 2 failed.")
             break
 
-        # 2번 위치에서 다시 물체 잡기
-        pick_success = pick_at(pos2_pose_up)
+def main():
+    task_compliance_ctrl([300, 300, 300, 200, 200, 200])
 
-        if pick_success == False:
-            print("Pick at position 2 failed.")
-            break
+    while 1:
+        x, y, z, = get_tool_force(DR_BASE)
+        impact_force = math.sqrt(x^2 + y^2 + z^2)
 
-        # 1번 위치로 되돌려 놓기
-        # 1번 위치도 기어 삽입 판정이 필요하면 place_at 사용
-        # 단순히 내려놓는 목적이면 place_simple_at 사용
-        place_success = place_simple_at(pos1_pose_up)
-
-        if place_success == False:
-            print("Simple place at position 1 failed.")
+        if impact_force >= 20:
+            release_compliance_ctrl()
+            start()
             break
 
 
