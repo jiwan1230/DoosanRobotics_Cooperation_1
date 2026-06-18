@@ -1,0 +1,73 @@
+import copy
+
+# 1번 위치 위쪽 좌표
+pos1_pose_up = posx(574.07, 149.69, 340.0, 0.0, -180.0, 0.0)
+
+# 2번 위치 위쪽 좌표
+pos3_pose_up = posx(276.04, 147.85, 340.75, 0.0, -180.0, 0.0)
+
+# 3번 위치 위쪽 좌표
+pos2_pose_up = posx(274.45, -151.64, 340.75, 0.0, -180.0, 0.0)
+
+# 외력 감지 기준값
+FORCE_THRESHOLD = - 5.0
+
+# 물체를 잡기 위해 접촉 위치에서 위로 올릴 높이
+GRIPPER_Z_OFFSET = 45.0
+
+# 아래로 내려갈 거리
+DOWN_DISTANCE = 500.0
+
+gripper_status = 0
+
+# compliance 전용 stiffness
+CUSTOM_STIFFNESS = [3000, 3000, 300, 400, 400, 400]
+
+# 이 Z값보다 높은 위치에서 외력이 감지되면
+# 기어가 맞물리지 않고 위에서 막혔다고 판단
+INSERT_SUCCESS_Z_THRESHOLD = 285.0
+
+def gripper_init():
+    global gripper_status
+
+    # 1번 위치 위쪽으로 이동
+    movel(pos1_pose_up, 50, 50)
+
+    # 그리퍼 열기
+    open_gripper()
+
+    gripper_status = 0
+
+    return
+
+def open_gripper():
+    global gripper_status
+
+    set_digital_output(1, OFF)
+    set_digital_output(2, ON)
+    mwait(1.5)
+
+    gripper_status = 0
+
+    return
+
+def close_gripper(contact_pos):
+    global gripper_status
+
+    # 접촉 위치 복사
+    grip_pos = copy.deepcopy(contact_pos)
+
+    # 접촉 위치에서 살짝 위로 이동해서 그리퍼가 잡을 수 있게 보정
+    grip_pos[2] += GRIPPER_Z_OFFSET
+
+    # 보정 위치로 이동
+    movel(grip_pos, 50, 50)
+
+    # 그리퍼 닫기
+    set_digital_output(2, OFF)
+    set_digital_output(1, ON)
+    mwait(1.5)
+
+    gripper_status = 1
+
+    return

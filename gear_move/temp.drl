@@ -7,17 +7,18 @@ import copy
 # 1번 위치 위쪽 좌표
 pos1_pose_up = posx(574.07, 149.69, 340.0, 0.0, -180.0, 0.0)
 
-# 2번 위치 위쪽 좌표
+# 3번 위치 위쪽 좌표
 pos3_pose_up = posx(276.04, 147.85, 340.75, 0.0, -180.0, 0.0)
 
-# 3번 위치 위쪽 좌표
-pos2_pose_up = posx(274.45, -151.64, 340.75, 0.0, -180.0, 0.0)
+# 2번 위치 위쪽 좌표
+# pos2_pose_up = posx(274.45, -151.64, 340.75, 0.0, -180.0, 0.0)
 
+# default가 -11 
 # 외력 감지 기준값
 FORCE_THRESHOLD = - 5.0
 
 # 물체를 잡기 위해 접촉 위치에서 위로 올릴 높이
-GRIPPER_Z_OFFSET = 45.0
+GRIPPER_Z_OFFSET = 40.0
 
 # 아래로 내려갈 거리
 DOWN_DISTANCE = 500.0
@@ -34,6 +35,16 @@ CUSTOM_STIFFNESS = [3000, 3000, 300, 400, 400, 400]
 # 기어 삽입 관련 설정
 # ===============================
 
+FORCE_TARGET_Z = -20.0
+FORCE_MARGIN = 5.0
+FORCE_DIRECTION = [0, 0, 1, 0, 0, 0]
+
+INSERT_TARGET_Z = 270.0
+INSERT_Z_TOLERANCE = 3.0
+
+ROTATE_STEP_DEG = 3.0
+MAX_ROTATE_TRY = 30
+
 # 이 Z값보다 높은 위치에서 외력이 감지되면
 # 기어가 맞물리지 않고 위에서 막혔다고 판단
 INSERT_SUCCESS_Z_THRESHOLD = 285.0
@@ -42,10 +53,8 @@ INSERT_SUCCESS_Z_THRESHOLD = 285.0
 RETRY_LIFT_Z = 8.0
 
 # 한 번 실패할 때마다 그리퍼/TCP를 회전할 각도
-ROTATE_STEP_DEG = 10.0
 
 # 최대 삽입 재시도 횟수
-MAX_INSERT_RETRY = 18
 
 # 삽입 시도 속도/가속도
 INSERT_SPEED = 10
@@ -235,96 +244,61 @@ def pick_at(up_pose):
 
     return True
 
+# 
+def move_down_rotate(up_pose):
+    global force
+    global force_derection
+
+    # 기어 삽입용 compliance
+    task_compliance_ctrl(CUSTOM_STIFFNESS)
+
+    for i in range(5):
+        # Z축 아래 방향으로 일정 힘을 가함
+        set_desired_force(
+            [0, 0, FORCE_TARGET_Z, 0, 0, 0],
+            FORCE_DIRECTION
+        )
+
+        success = False
+        amove_periodic(amp = [0, 0, 0, 0, 0, 2], period = 0.5, atime = 0.1, repeat = 20, ref = DR_TOOL)
+        mwait(0)
+        current_pos = get_current_posx()[0]
+        current_z = current_pos[2]
+
+        if current_z <= (INSERT_TARGET_Z + INSERT_Z_TOLERANCE):
+            success = True
+        else:
+            print("Gear insertion failed.")
+            stop(DR_SSTOP)
+            # 아직 목표 Z까지 못 내려갔다면 살짝 회전
+        
+
+    # force / compliance 해제
+    release_force(0.5)
+    release_compliance_ctrl()
+
+    if success:
+        open_gripper()
+        return True
+    else:
+        
+        return False
 
 # ===============================
 # 기어 삽입용 Place 함수
 # ===============================
-
 def place_at(up_pose):
     global gripper_status
 
-    # 물체를 잡고 있지 않으면 place 불가
-    if gripper_status == 0:
-        print("No object in gripper. Skip place.")
-        return False
-
-    # 회전 자세가 누적 반영될 현재 up_pose
-    current_up_pose = copy.deepcopy(up_pose)
-
     # 해당 위치 위쪽으로 이동
-    movel(current_up_pose, 50, 50)
+    movel(up_pose, 50, 50)
 
-    # 삽입 재시도
-    for retry_count in range(MAX_INSERT_RETRY):
+    # 아래로 내려가다가 외력이 감지되면 정지하고 접촉 위치 반환
+    move_down_rotate(up_pose)
 
-        print("Gear insertion try:", retry_count + 1)
+    movel(up_pose, 50, 50)
 
-        # Compliance 활성화
-        activate_compliance_ctrl()
-
-        # 천천히 아래로 내려가며 접촉 감지
-        contact_pos = move_down_until_contact(
-            current_up_pose,
-            INSERT_SPEED,
-            INSERT_ACC
-        )
-
-        # Compliance 비활성화
-        deactivate_compliance_ctrl()
-
-        # 접촉 실패 시 위로 복귀 후 실패 처리
-        if contact_pos is None:
-            print("No contact detected.")
-            movel(current_up_pose, 50, 50)
-            return False
-
-        contact_z = contact_pos[2]
-
-        print("Contact Z:", contact_z)
-
-        # ===============================
-        # 삽입 성공 판단
-        # ===============================
-        if contact_z <= INSERT_SUCCESS_Z_THRESHOLD:
-            print("Gear insertion success.")
-
-            # 충분히 아래까지 들어간 경우에만 그리퍼 열기
-            open_gripper()
-
-            # 위쪽 위치로 복귀
-            movel(current_up_pose, 50, 50)
-
-            return True
-
-        # ===============================
-        # 삽입 실패 판단
-        # ===============================
-        else:
-            print("Gear blocked at high Z. Lift, rotate, retry.")
-
-            # 기어가 위에서 막힌 상태이므로 아직 그리퍼를 열지 않음
-
-            # 1. 살짝 들어올리기
-            lift_from_current(RETRY_LIFT_Z)
-
-            # 2. 현재 위치에서 그리퍼/TCP 살짝 회전
-            rotate_gripper_z(ROTATE_STEP_DEG)
-
-            # 3. 다음 삽입 시도에서도 회전 자세가 유지되도록 up_pose의 Rz도 갱신
-            current_up_pose[5] += ROTATE_STEP_DEG
-
-            # 4. 회전된 자세로 다시 상단 위치 이동
-            movel(current_up_pose, 30, 30)
-
-    # ===============================
-    # 최대 재시도 실패
-    # ===============================
-    print("Gear insertion failed. Max retry exceeded.")
-
-    # 실패 시 물체는 놓지 않고 위로 복귀
-    movel(current_up_pose, 50, 50)
-
-    return False
+    return
 
 
 # ===============================
