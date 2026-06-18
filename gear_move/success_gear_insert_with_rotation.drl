@@ -279,7 +279,7 @@ def start():
 def main():
 
     while 1:
-        x, y, z, _, _, _= get_tool_force(DR_BASE, 0)
+        x, y, z, _, _, _= get_tool_force(DR_BASE)
         z += 10
         
         impact_force = math.sqrt(x**2 + y**2 + z**2)
