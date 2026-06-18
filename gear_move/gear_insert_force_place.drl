@@ -38,6 +38,16 @@ force_derection = [0, 0, -1, 0, 0, 0]
 # 기어 삽입 관련 설정
 # ===============================
 
+FORCE_TARGET_Z = -20.0
+FORCE_MARGIN = 5.0
+FORCE_DIRECTION = [0, 0, 1, 0, 0, 0]
+
+INSERT_TARGET_Z = 270.0
+INSERT_Z_TOLERANCE = 3.0
+
+ROTATE_STEP_DEG = 3.0
+MAX_ROTATE_TRY = 30
+
 # 이 Z값보다 높은 위치에서 외력이 감지되면
 # 기어가 맞물리지 않고 위에서 막혔다고 판단
 INSERT_SUCCESS_Z_THRESHOLD = 285.0
@@ -240,25 +250,54 @@ def pick_at(up_pose):
     return True
 
 # 
-def move_down_rotate(up_pose):   #닿을 때까지 하강
+def move_down_rotate(up_pose):
     global force
     global force_derection
-    
-    task_compliance_ctrl(stx)
-    set_desired_force(force, force_derection)
-    while True:
-        if not check_force_condition(DR_AXIS_Z, force-5, force+5, ref):
-            if get_current_posx(DR_BASE)[2] < INSERT_SUCCESS_Z_THRESHOLD:
-                break
-            else:
-                movel([0, 0, 0, 0, 0, 3], 10, 20, ref=DR_TOOL, mod=DR_MV_MOD_REL)
-                mwait(0)
-        
 
+    # 기어 삽입용 compliance
+    task_compliance_ctrl(CUSTOM_STIFFNESS)
+
+    # Z축 아래 방향으로 일정 힘을 가함
+    set_desired_force(
+        [0, 0, FORCE_TARGET_Z, 0, 0, 0],
+        FORCE_DIRECTION
+    )
+
+    success = False
+
+    for i in range(MAX_ROTATE_TRY):
+
+        current_pos = get_current_posx()[0]
+        current_z = current_pos[2]
+
+        print("Insert try:", i + 1, "current_z:", current_z)
+
+        # Z값이 270 근처까지 내려가면 성공
+        if current_z <= INSERT_TARGET_Z + INSERT_Z_TOLERANCE:
+            success = True
+            break
+
+        # 아직 목표 Z까지 못 내려갔다면 살짝 회전
+        movel(
+            [0, 0, 0, 0, 0, ROTATE_STEP_DEG],
+            10,
+            20,
+            ref=DR_TOOL,
+            mod=DR_MV_MOD_REL
+        )
+
+        wait(0.05)
+
+    # force / compliance 해제
     release_force(0.5)
     release_compliance_ctrl()
-    open_gripper()
-    return 
+
+    if success:
+        open_gripper()
+        return True
+    else:
+        print("Gear insertion failed.")
+        return False
 
 # ===============================
 # 기어 삽입용 Place 함수
